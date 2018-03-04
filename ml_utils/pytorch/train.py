@@ -1,4 +1,7 @@
+from pathlib import Path
+import psutil
 import logging
+from datetime import datetime
 import torch
 from torch.autograd import Variable
 
@@ -41,10 +44,48 @@ def train(epoch, train_loader, model, loss_func, optimizer):
 
         optimizer.zero_grad()
         output = model(data)
-        loss = loss_func(output, target)
+
+        loss = loss_func(output, target.long())
         loss.backward()
         optimizer.step()
         if batch_idx % 100 == 0:
-            logging.info('Train Epoch: {:03d} [{:05d}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                epoch, batch_idx * len(data), len(train_loader) * len(data),
-                100. * batch_idx / len(train_loader), loss.data[0]))
+            logging.info('Train Epoch: {:03d} [{:05d}/{} ({:.0f}%)]\tLoss: {:.6f}'
+                         '\t|CPU usage: {:.0f}%| |RAM usage: {:.0f}%|'
+                         .format(
+                             epoch,
+                             batch_idx * len(data), len(train_loader) * len(data),
+                             100. * batch_idx / len(train_loader),
+                             loss.data[0],
+                             psutil.cpu_percent(),
+                             psutil.virtual_memory().percent,
+                         ))
+
+
+def save_snapshot(epoch, net, loss, optimizer, fout_name=None):
+    if fout_name is None:
+        fout_name = '{model_name}_{now}_loss_{loss}_epoch_{epoch}.pth'.format(
+            model_name=str(model.__class__.__name__),
+            now=datetime.now().strftime('%Y-%M-%d'),
+            loss=loss,
+            epoch=epoch,
+        )
+        fout_name = Path.cwd() / fout_name
+
+        state = {
+            'epoch': epoch,
+            'net': net.state_dict(),
+            'loss': loss,
+            'optimizer': optimizer.state_dict(),
+        }
+        torch.save(state, fout_name.as_posix())
+        logging.info("Snapshot saved to {}".format(fout_name.as_posix()))
+
+
+def load_snapshot(fname):
+    state_dict = torch.load(fname.as_posix)
+    epoch = state_dict['epoch']
+    net_state_dict = state_dict['net']
+    loss = state_dict['loss']
+    optimizer_state_dict = state_dict['optimizer']
+
+    return epoch, net_state_dict, loss, optimizer_state_dict

@@ -21,7 +21,7 @@ class CustomDataset(Dataset):
 
     def __init__(self, csv_path, img_path, img_ext='.jpg',
                  transform=transforms.Compose(
-                     [transforms.Scale(size=(64, 64)),
+                     [transforms.Resize(size=(64, 64)),
                       transforms.ToTensor(),
                       transforms.Normalize(mean=(0.5, 0.5, 0.5),
                                            std=(0.5, 0.5, 0.5))]),
@@ -62,8 +62,7 @@ class CustomDataset(Dataset):
             img = self.transform(img)
 
         label = self.labels[index]
-        label_binarized = from_numpy(self.labels_binarized[index])
-        return img, label, label_binarized
+        return img, label
 
     def __len__(self):
         return len(self.df.index)
