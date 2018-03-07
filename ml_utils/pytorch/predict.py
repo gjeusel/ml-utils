@@ -8,6 +8,7 @@ from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 
+
 def predict(test_loader, net):
     """Predict values for test_loader datas with net."""
     net.eval()
@@ -29,10 +30,10 @@ def predict(test_loader, net):
     return np.concatenate(class_pred)
 
 
-def validate(valid_loader, net):
+def validate(valid_loader, net, score_func, score_type='proba'):
     """Predict & compute a accuracy_score & fbeta_score."""
     net.eval()
-    # proba_pred = []
+    proba_pred = []
     class_pred = []
     true_labels_binarized = []
     targets = []
@@ -48,18 +49,26 @@ def validate(valid_loader, net):
 
         pred = net(data)
 
-        # ppred = F.softmax(pred, dim=1).data.cpu()
-        # proba_pred.append(ppred.numpy())
+        ppred = F.softmax(pred, dim=1).data.cpu()
+        proba_pred.append(ppred.numpy())
 
         _, cpred = torch.max(pred.data.cpu(), dim=1)
         class_pred.append(cpred.numpy())
 
         targets.append(target.data.cpu().numpy())
 
-    # proba_pred = np.concatenate(proba_pred)
+    proba_pred = np.concatenate(proba_pred)
     class_pred = np.concatenate(class_pred)
     targets = np.concatenate(targets)
-    acc = accuracy_score(y_true=targets, y_pred=class_pred)
-    fbeta2 = fbeta_score(y_true=targets, y_pred=class_pred, beta=2)
+    # acc = accuracy_score(y_true=targets, y_pred=class_pred)
+    # fbeta2 = fbeta_score(y_true=targets, y_pred=class_pred, beta=2)
+
+    if score_type == 'proba':
+        score = score_func(y_true=targets, y_pred=proba_pred)
+    elif score_type == 'classe':
+        score = score_func(y_true=targets, y_pred=class_pred)
+    else:
+        raise ValueError
+
     logger.info(classification_report(y_true=targets, y_pred=class_pred))
-    return acc
+    return score

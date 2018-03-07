@@ -57,12 +57,8 @@ class CustomDataset(Dataset):
         self.ids = self.df.index
 
         self.lb = LabelBinarizer()
-        if 'orientation' in self.df.columns.tolist():
-            self.labels = self.df['orientation'].values - 1
-            self.labels_binarized = self.lb.fit_transform(self.df['orientation']).astype(np.float32)
-        else:
-            self.labels = np.zeros(self.df.shape[0])
-            self.labels_binarized = np.zeros(self.df.shape)
+        self.labels = self.df['label'].values
+        self.labels_binarized = self.lb.fit_transform(self.df['label']).astype(np.float32)
 
     def __getitem__(self, index):
         """Return data at index."""
