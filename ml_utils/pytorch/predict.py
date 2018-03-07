@@ -1,16 +1,19 @@
 import logging
 import numpy as np
 import torch
+from sklearn.metrics import accuracy_score, fbeta_score, classification_report
+import torch.nn.functional as F
 from torch.autograd import Variable
 from tqdm import tqdm
 
+logger = logging.getLogger(__name__)
 
-def predict(test_loader, model):
-    """Predict values for test_loader datas with model."""
-    model.eval()
+def predict(test_loader, net):
+    """Predict values for test_loader datas with net."""
+    net.eval()
     predictions = []
 
-    logging.info("Starting Prediction")
+    logger.info("Starting Prediction")
     for batch_idx, (data, _) in enumerate(tqdm(test_loader)):
         if torch.cuda.is_available():
             data = data.cuda(async=True)
@@ -21,14 +24,15 @@ def predict(test_loader, model):
     return np.vstack(predictions)
 
 
-def validate(valid_loader, model, metric):
-    """Predict & compute a score with metric."""
-    model.eval()
-    predictions = []
+def validate(valid_loader, net):
+    """Predict & compute a accuracy_score & fbeta_score."""
+    net.eval()
+    # proba_pred = []
+    class_pred = []
     true_labels_binarized = []
     targets = []
 
-    logging.info("Starting Validation")
+    logger.info("Starting Validation")
     for batch_idx, (data, target) in enumerate(tqdm(valid_loader)):
         if torch.cuda.is_available():
             data, target = data.cuda(async=True), target.cuda(async=True)
@@ -37,12 +41,20 @@ def validate(valid_loader, model, metric):
         data = Variable(data, volatile=True)
         target = Variable(target, volatile=True)
 
-        pred = model(data)
-        predictions.append(pred.data.cpu().numpy())
+        pred = net(data)
+
+        # ppred = F.softmax(pred, dim=1).data.cpu()
+        # proba_pred.append(ppred.numpy())
+
+        _, cpred = torch.max(pred.data.cpu(), dim=1)
+        class_pred.append(cpred.numpy())
+
         targets.append(target.data.cpu().numpy())
 
-    predictions = np.vstack(predictions)
-    targets = np.vstack(targets)
-    score = metric(targets, predictions)
-    logging.info("Score obtained: {}".format(score))
-    return score
+    # proba_pred = np.concatenate(proba_pred)
+    class_pred = np.concatenate(class_pred)
+    targets = np.concatenate(targets)
+    acc = accuracy_score(y_true=targets, y_pred=class_pred)
+    fbeta2 = fbeta_score(y_true=targets, y_pred=class_pred, beta=2)
+    logger.info(classification_report(y_true=targets, y_pred=class_pred))
+    return acc

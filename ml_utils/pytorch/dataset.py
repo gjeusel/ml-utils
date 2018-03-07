@@ -1,3 +1,4 @@
+import logging
 import pandas as pd
 import PIL
 import random
@@ -7,6 +8,8 @@ from sklearn.preprocessing import LabelBinarizer
 from torchvision import transforms
 from torch.utils.data.dataset import Dataset
 from torch import from_numpy, np
+
+logger = logging.getLogger()
 
 
 class CustomDataset(Dataset):
@@ -26,6 +29,13 @@ class CustomDataset(Dataset):
                       transforms.Normalize(mean=(0.5, 0.5, 0.5),
                                            std=(0.5, 0.5, 0.5))]),
                  limit_load=None):
+
+        logger.info('Initializing dataset using {} with {}'.format(
+            csv_path.as_posix(),
+            [t.__class__.__name__ for t in transform.transforms])
+        )
+        if limit_load:
+            logger.info('limit_load set to {}'.format(limit_load))
 
         df = pd.read_csv(csv_path, index_col=0, nrows=limit_load)
         df.index.name = 'id'
@@ -81,6 +91,7 @@ def train_valid_split(dataset, test_size=0.25, shuffle=False, random_seed=0):
         Shuffling True or False
         Random seed
     """
+    logger.info('Splitting dataset with test_size={}%'.format(test_size*100))
     length = len(dataset)
     indices = list(range(1, length))
 

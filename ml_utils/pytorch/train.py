@@ -19,21 +19,21 @@ def lr_scheduler(optimizer, epoch, init_lr=0.01, lr_decay_epoch=7):
     return optimizer
 
 
-def train(epoch, train_loader, model, loss_func, optimizer):
+def train(epoch, train_loader, net, loss_func, optimizer):
     """Unique epoch computation.
 
     Args:
         epoch (int): epoch number, used for learning_rate scheduling.
         train_loader (torch.utils.data.dataloader.DataLoader): data loader for
             training purpose.
-        model: your neural network
+        net: your neural network
         loss_func (torch.nn.modules.loss.something): your loss function
         optimizer (torch.optim.something): your optimizer
 
     .. _Pytorch Net Example:
         http://pytorch.org/tutorials/beginner/blitz/neural_networks_tutorial.html
     """
-    model.train()  # set a bool to true, this has ony effect on dropout, batchnorm etc..
+    net.train()  # set a bool to true, this has ony effect on dropout, batchnorm etc..
     optimizer = lr_scheduler(optimizer, epoch)
 
     for batch_idx, (data, target) in enumerate(train_loader):
@@ -43,7 +43,7 @@ def train(epoch, train_loader, model, loss_func, optimizer):
         target = Variable(target, requires_grad=False)
 
         optimizer.zero_grad()
-        output = model(data)
+        output = net(data)
 
         loss = loss_func(output, target.long())
         loss.backward()
@@ -61,12 +61,12 @@ def train(epoch, train_loader, model, loss_func, optimizer):
                          ))
 
 
-def save_snapshot(epoch, net, loss, optimizer, fout_name=None):
+def save_snapshot(epoch, net, score, optimizer, fout_name=None):
     if fout_name is None:
-        fout_name = '{model_name}_{now}_loss_{loss}_epoch_{epoch}.pth'.format(
-            model_name=str(model.__class__.__name__),
-            now=datetime.now().strftime('%Y-%M-%d'),
-            loss=loss,
+        fout_name = '{net_name}_{now}_score_{score}_epoch_{epoch}.pth'.format(
+            net_name=str(net.__class__.__name__),
+            now=datetime.now().strftime('%Y-%M-%d-%H-%m'),
+            score=score,
             epoch=epoch,
         )
         fout_name = Path.cwd() / fout_name
@@ -74,7 +74,7 @@ def save_snapshot(epoch, net, loss, optimizer, fout_name=None):
         state = {
             'epoch': epoch,
             'net': net.state_dict(),
-            'loss': loss,
+            'score': score,
             'optimizer': optimizer.state_dict(),
         }
         torch.save(state, fout_name.as_posix())
@@ -82,10 +82,18 @@ def save_snapshot(epoch, net, loss, optimizer, fout_name=None):
 
 
 def load_snapshot(fname):
-    state_dict = torch.load(fname.as_posix)
+    """Load a Snapshot given a path to a .pth file."""
+    if hasattr(fname, 'as_posix'):
+        state_dict = torch.load(fname.as_posix)
+    elif isinstance(fname, str):
+        try:
+            state_dict = torch.load(fname)
+        except:
+            raise ValueError
+
     epoch = state_dict['epoch']
     net_state_dict = state_dict['net']
-    loss = state_dict['loss']
+    score = state_dict['score']
     optimizer_state_dict = state_dict['optimizer']
 
-    return epoch, net_state_dict, loss, optimizer_state_dict
+    return epoch, net_state_dict, score, optimizer_state_dict
