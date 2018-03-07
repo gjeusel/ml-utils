@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 def predict(test_loader, net):
     """Predict values for test_loader datas with net."""
     net.eval()
-    predictions = []
+    class_pred = []
 
     logger.info("Starting Prediction")
     for batch_idx, (data, _) in enumerate(tqdm(test_loader)):
@@ -20,8 +20,10 @@ def predict(test_loader, net):
 
         # Volatile variables do not save intermediate results and build graphs for backprop, achieving massive memory savings.
         data = Variable(data, volatile=True)
-        predictions.append(pred.data.cpu().numpy())
-    return np.vstack(predictions)
+        _, cpred = torch.max(pred.data.cpu(), dim=1)
+        class_pred.append(cpred.numpy())
+
+    return np.concatenate(class_pred)
 
 
 def validate(valid_loader, net):

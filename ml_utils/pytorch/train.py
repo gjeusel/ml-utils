@@ -5,13 +5,15 @@ from datetime import datetime
 import torch
 from torch.autograd import Variable
 
+logger = logging.getLogger(__name__)
+
 
 def lr_scheduler(optimizer, epoch, init_lr=0.01, lr_decay_epoch=7):
     """Decay learning rate by a factor of 0.1 every lr_decay_epoch epochs."""
     lr = init_lr * (0.1**(epoch // lr_decay_epoch))
 
     if epoch % lr_decay_epoch == 0:
-        logging.info('LR is set to {}'.format(lr))
+        logger.info('LR is set to {}'.format(lr))
 
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
@@ -49,7 +51,7 @@ def train(epoch, train_loader, net, loss_func, optimizer):
         loss.backward()
         optimizer.step()
         if batch_idx % 100 == 0:
-            logging.info('Train Epoch: {:03d} [{:05d}/{} ({:.0f}%)]\tLoss: {:.6f}'
+            logger.info('Train Epoch: {:03d} [{:05d}/{} ({:.0f}%)]\tLoss: {:.6f}'
                          '\t|CPU usage: {:.0f}%| |RAM usage: {:.0f}%|'
                          .format(
                              epoch,
@@ -61,35 +63,39 @@ def train(epoch, train_loader, net, loss_func, optimizer):
                          ))
 
 
-def save_snapshot(epoch, net, score, optimizer, fout_name=None):
-    if fout_name is None:
-        fout_name = '{net_name}_{now}_score_{score}_epoch_{epoch}.pth'.format(
+def save_snapshot(epoch, net, score, optimizer, pth_path=None):
+    if pth_path is None:
+        pth_path = '{net_name}_{now}_score_{score}_epoch_{epoch}.pth'.format(
             net_name=str(net.__class__.__name__),
             now=datetime.now().strftime('%Y-%M-%d-%H-%m'),
             score=score,
             epoch=epoch,
         )
-        fout_name = Path.cwd() / fout_name
+        pth_path = Path.cwd() / pth_path
 
-        state = {
-            'epoch': epoch,
-            'net': net.state_dict(),
-            'score': score,
-            'optimizer': optimizer.state_dict(),
-        }
-        torch.save(state, fout_name.as_posix())
-        logging.info("Snapshot saved to {}".format(fout_name.as_posix()))
+    logger.info("Saving snapshot to {}...".format(pth_path.as_posix()))
+
+    state = {
+        'epoch': epoch,
+        'net': net.state_dict(),
+        'score': score,
+        'optimizer': optimizer.state_dict(),
+    }
+    torch.save(state, pth_path.as_posix())
 
 
-def load_snapshot(fname):
+def load_snapshot(pth_path):
     """Load a Snapshot given a path to a .pth file."""
-    if hasattr(fname, 'as_posix'):
-        state_dict = torch.load(fname.as_posix)
-    elif isinstance(fname, str):
+    if hasattr(pth_path, 'as_posix'):
+        state_dict = torch.load(pth_path.as_posix())
+        logger.info("Loading snapshot {}...".format(pth_path.as_posix()))
+    elif isinstance(pth_path, str):
         try:
-            state_dict = torch.load(fname)
+            state_dict = torch.load(pth_path)
         except:
             raise ValueError
+        logger.info("Loading snapshot {}...".format(pth_path))
+
 
     epoch = state_dict['epoch']
     net_state_dict = state_dict['net']
