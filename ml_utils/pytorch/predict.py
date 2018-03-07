@@ -20,6 +20,9 @@ def predict(test_loader, net):
 
         # Volatile variables do not save intermediate results and build graphs for backprop, achieving massive memory savings.
         data = Variable(data, volatile=True)
+
+        pred = net(data)
+
         _, cpred = torch.max(pred.data.cpu(), dim=1)
         class_pred.append(cpred.numpy())
 
