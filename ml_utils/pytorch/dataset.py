@@ -47,7 +47,7 @@ class CustomDataset(Dataset):
         if not all(ids_missing_mask):
             raise ValueError("Some images referenced in the CSV file where not "
                              "found: {}".format(
-                                 df['id'][[not i for i in ids_missing_mask]]))
+                                 df.index[[not i for i in ids_missing_mask]]))
 
         self.df = df
         self.img_path = img_path
@@ -58,7 +58,10 @@ class CustomDataset(Dataset):
 
         self.lb = LabelBinarizer()
         self.labels = self.df['label'].values
-        self.labels_binarized = self.lb.fit_transform(self.df['label']).astype(np.float32)
+        try:
+            self.labels_binarized = self.lb.fit_transform(self.df['label']).astype(np.float32)
+        except ValueError as e:
+            logger.debug(e)
 
     def __getitem__(self, index):
         """Return data at index."""

@@ -9,9 +9,10 @@ from tqdm import tqdm
 logger = logging.getLogger(__name__)
 
 
-def predict(test_loader, net):
+def predict(test_loader, net, score_type='proba'):
     """Predict values for test_loader datas with net."""
     net.eval()
+    proba_pred = []
     class_pred = []
 
     logger.info("Starting Prediction")
@@ -24,8 +25,22 @@ def predict(test_loader, net):
 
         pred = net(data)
 
+        ppred = F.softmax(pred, dim=1).data.cpu()
+        proba_pred.append(ppred.numpy())
+
         _, cpred = torch.max(pred.data.cpu(), dim=1)
         class_pred.append(cpred.numpy())
+
+    proba_pred = np.concatenate(proba_pred)
+    class_pred = np.concatenate(class_pred)
+
+    if score_type == 'proba':
+        return proba_pred
+    elif score_type == 'class':
+        return class_pred
+    else:
+        raise ValueError
+
 
     return np.concatenate(class_pred)
 
@@ -65,7 +80,7 @@ def validate(valid_loader, net, score_func, score_type='proba'):
 
     if score_type == 'proba':
         score = score_func(y_true=targets, y_pred=proba_pred)
-    elif score_type == 'classe':
+    elif score_type == 'class':
         score = score_func(y_true=targets, y_pred=class_pred)
     else:
         raise ValueError
