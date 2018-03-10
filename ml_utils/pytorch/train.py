@@ -63,15 +63,14 @@ def train(epoch, train_loader, net, loss_func, optimizer):
                          ))
 
 
-def save_snapshot(epoch, net, score, optimizer, pth_path=None):
-    if pth_path is None:
-        pth_path = '{net_name}_{now}_score_{score}_epoch_{epoch}.pth'.format(
-            net_name=str(net.__class__.__name__),
-            now=datetime.now().strftime('%Y-%M-%d-%H-%m'),
-            score=score,
-            epoch=epoch,
-        )
-        pth_path = Path.cwd() / pth_path
+def save_snapshot(epoch, net, score, optimizer, pth_dir=Path.cwd()):
+    pth_name = '{net_name}_{now}_score_{score}_epoch_{epoch}.pth'.format(
+        net_name=str(net.__class__.__name__),
+        now=datetime.now().strftime('%Y-%M-%d-%H-%m'),
+        score=score,
+        epoch=epoch,
+    )
+    pth_path = pth_dir / pth_name
 
     logger.info("Saving snapshot to {}...".format(pth_path.as_posix()))
 
