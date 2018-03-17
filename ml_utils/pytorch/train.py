@@ -67,7 +67,7 @@ def save_snapshot(epoch, net, score, optimizer, pth_dir=Path.cwd()):
     pth_name = '{net_name}_{now}_score_{score}_epoch_{epoch}.pth'.format(
         net_name=str(net.__class__.__name__),
         now=datetime.now().strftime('%Y-%M-%d-%H-%m'),
-        score=score,
+        score=round(score, 3),
         epoch=epoch,
     )
     pth_path = pth_dir / pth_name
