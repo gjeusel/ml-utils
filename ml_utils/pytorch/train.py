@@ -8,7 +8,8 @@ from torch.autograd import Variable
 logger = logging.getLogger(__name__)
 
 
-def lr_scheduler(optimizer, epoch, init_lr=0.01, lr_decay_epoch=7):
+def lr_scheduler(optimizer, epoch, init_lr=0.01, lr_decay_epoch=7,
+                 tb_writer=None):
     """Decay learning rate by a factor of 0.1 every lr_decay_epoch epochs."""
     lr = init_lr * (0.1**(epoch // lr_decay_epoch))
 
@@ -18,10 +19,14 @@ def lr_scheduler(optimizer, epoch, init_lr=0.01, lr_decay_epoch=7):
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
 
+    if tb_writer:
+        tb_writer.add_scalar('data/learning_rate', lr, epoch)
+
     return optimizer
 
 
-def train(epoch, train_loader, net, loss_func, optimizer):
+def train(epoch, train_loader, net, loss_func, optimizer,
+          tb_writer=None):
     """Unique epoch computation.
 
     Args:
@@ -36,7 +41,7 @@ def train(epoch, train_loader, net, loss_func, optimizer):
         http://pytorch.org/tutorials/beginner/blitz/neural_networks_tutorial.html
     """
     net.train()  # set a bool to true, this has ony effect on dropout, batchnorm etc..
-    optimizer = lr_scheduler(optimizer, epoch)
+    optimizer = lr_scheduler(optimizer, epoch, tb_writer=tb_writer)
 
     for batch_idx, (data, target) in enumerate(train_loader):
         if torch.cuda.is_available():
@@ -48,6 +53,10 @@ def train(epoch, train_loader, net, loss_func, optimizer):
         output = net(data)
 
         loss = loss_func(output, target.long())
+        if tb_writer:
+            tb_writer.add_scalar('data/loss', loss.cpu().data[0],
+                                  batch_idx * (epoch + 1))
+
         loss.backward()
         optimizer.step()
         if batch_idx % 100 == 0:
@@ -55,7 +64,8 @@ def train(epoch, train_loader, net, loss_func, optimizer):
                          '\t|CPU usage: {:.0f}%| |RAM usage: {:.0f}%|'
                          .format(
                              epoch,
-                             batch_idx * len(data), len(train_loader) * len(data),
+                             batch_idx * len(data),
+                             len(train_loader) * len(data),
                              100. * batch_idx / len(train_loader),
                              loss.data[0],
                              psutil.cpu_percent(),
