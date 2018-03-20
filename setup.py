@@ -8,7 +8,6 @@ setup(name='ml-utils',
       packages=['ml_utils'],
       install_requires=[
           'psutil',
-          'pytorch',
           'sklearn',
           'tqdm',
           'Pillow',
