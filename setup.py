@@ -6,4 +6,14 @@ setup(name='ml-utils',
       author='Guillaume Jeusel',
       author_email='guillaume.jeusel@gmail.com',
       packages=['ml_utils'],
+      install_requires=[
+          'psutil',
+          'pytorch',
+          'sklearn',
+          'tqdm',
+          'PIL',
+          'pandas',
+          'numpy',
+          'scipy',
+      ]
      )
