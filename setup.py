@@ -14,5 +14,11 @@ setup(name='ml-utils',
           'pandas',
           'numpy',
           'scipy',
+
+          # Plot purpose:
+          'matplotlib',
+          'colorlover',
+          'plotly',
+          'seaborn',
       ]
      )
