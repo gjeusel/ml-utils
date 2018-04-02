@@ -16,7 +16,8 @@ def lr_scheduler(optimizer, epoch, init_lr=0.01, lr_decay_epoch=7,
     lr = init_lr * (0.1**(epoch // lr_decay_epoch))
 
     if epoch % lr_decay_epoch == 0:
-        logger.info('LR is set to {} for {}'.format(lr, optimizer.__class__.__name__))
+        logger.info('LR is set to {} for {}'.format(
+            lr, optimizer.__class__.__name__))
 
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
@@ -59,7 +60,6 @@ def load_snapshot(pth_path):
             raise ValueError
         logger.info("Loading snapshot {}...".format(pth_path))
 
-
     epoch = state_dict['epoch']
     net_state_dict = state_dict['net']
     score = state_dict['score']
@@ -86,7 +86,7 @@ def train_image_classification(epoch, train_loader, net, loss_func, optimizer,
     net.train()  # set a bool to true, this has ony effect on dropout, batchnorm etc..
     optimizer = lr_scheduler(optimizer, epoch, tb_writer=tb_writer)
 
-    for batch_index, (data, target) in enumerate(train_loader):
+    for batch_id, (data, target) in enumerate(train_loader):
         if torch.cuda.is_available():
             data, target = data.cuda(async=True), target.cuda(async=True)
         data = Variable(data)
@@ -98,89 +98,75 @@ def train_image_classification(epoch, train_loader, net, loss_func, optimizer,
         loss = loss_func(output, target.long())
         if tb_writer:
             tb_writer.add_scalar('data/loss', loss.cpu().data[0],
-                                  batch_index * (epoch + 1))
+                                 batch_id * (epoch + 1))
 
         loss.backward()
         optimizer.step()
-        if batch_index % 100 == 0:
+        if batch_id % 100 == 0:
             logger.info('Train epoch: {:03d} [{:04d}/{:04d} ({:.0f}%)]\tloss: {:.6f}'
-                         '\t|cpu usage: {:.0f}%| |ram usage: {:.0f}%|'
-                         .format(
-                             epoch,
-                             batch_index * len(data),
-                             len(train_loader) * len(data),
-                             100. * batch_index / len(train_loader),
-                             loss.data[0],
-                             psutil.cpu_percent(),
-                             psutil.virtual_memory().percent,
-                         ))
+                        '\t|cpu usage: {:.0f}%| |ram usage: {:.0f}%|'
+                        .format(
+                            epoch,
+                            batch_id * len(data),
+                            len(train_loader) * len(data),
+                            100. * batch_id / len(train_loader),
+                            loss.data[0],
+                            psutil.cpu_percent(),
+                            psutil.virtual_memory().percent,
+                        ))
 
 
-def train_oneiter_da_rnn(X, y_history, y_target,
-                         encoder_optimizer, decoder_optimizer,
-                         encoder, decoder,
-                         loss_func, tb_writer=None):
-
-    encoder_optimizer.zero_grad()
-    decoder_optimizer.zero_grad()
-
-    X = Variable(torch.from_numpy(X).type(torch.FloatTensor))
-    y_history = Variable(torch.from_numpy(y_history).type(torch.FloatTensor))
-    y_true = Variable(torch.from_numpy(y_target).type(torch.FloatTensor))
-
-    if torch.cuda.is_available():
-        X = X.cuda()
-        y_history = y_history.cuda()
-        y_true = y_true.cuda()
-
-    input_weighted, input_encoded = encoder(X)
-    y_pred = decoder(input_encoded, y_history)
-
-    loss = loss_func(y_pred, y_true)
-
-    loss.backward()
-
-    encoder_optimizer.step()
-    decoder_optimizer.step()
-
-    return loss.data[0]
-
-
-def train_oneepoch_da_rnn(epoch, X, y, train_size,
-                          batch_size, n_timestep, perm_idx,
-                          encoder_optimizer, decoder_optimizer,
-                          encoder, decoder,
-                          loss_func, tb_writer=None):
+def train_da_rnn(epoch, train_loader,
+                 encoder_optimizer, decoder_optimizer,
+                 encoder, decoder,
+                 loss_func,
+                 tb_writer=None):
 
     encoder_optimizer = lr_scheduler(encoder_optimizer, epoch, tb_writer=tb_writer)
     decoder_optimizer = lr_scheduler(decoder_optimizer, epoch, tb_writer=tb_writer)
 
-    batches_range = range(0, train_size, batch_size)[:-1]  # exclude last element
     iter_losses = []
 
-    for batch_id, j in enumerate(batches_range):
-        batch_index = perm_idx[j: (j + batch_size)]
+    for batch_id, (X_batch, y_history, y_target) in enumerate(train_loader):
 
-        X_batch = np.zeros((len(batch_index), n_timestep - 1, X.shape[1]))
-        y_history = np.zeros((len(batch_index), n_timestep - 1))
-        y_target = y[batch_index + n_timestep]
+        if torch.cuda.is_available():
+            X_batch = X_batch.cuda(async=True)
+            y_history = y_history.cuda(async=True)
+            y_target = y_target.cuda(async=True)
 
-        for k in range(len(batch_index)):
-            X_batch[k, :, :] = X[batch_index[k] : (batch_index[k] + n_timestep - 1), :]
-            y_history[k, :] = y[batch_index[k] : (batch_index[k] + n_timestep - 1)]
+        X_batch = Variable(X_batch)
+        y_history = Variable(y_history)
+        y_target = Variable(y_target, requires_grad=False)
 
-        loss = train_oneiter_da_rnn(X_batch, y_history, y_target,
-                                    encoder_optimizer, decoder_optimizer,
-                                    encoder, decoder, loss_func, tb_writer)
-        iter_losses.append(loss)
+        encoder_optimizer.zero_grad()
+        decoder_optimizer.zero_grad()
+
+        input_weighted, input_encoded = encoder(X_batch)
+        y_pred = decoder(input_encoded, y_history)
+
+        loss = loss_func(y_pred, y_target)
+
+        loss.backward()
+
+        encoder_optimizer.step()
+        decoder_optimizer.step()
+
+        iter_losses.append(loss.cpu().data[0])
+        if tb_writer:
+            tb_writer.add_scalar('data/batch_loss_epoch_{}'.format(epoch),
+                                 loss.cpu().data[0], batch_id)
+
         if batch_id % 100 == 0:
             logger.info('Train epoch: {:03d} [{:04d}/{:04d} ({:.0f}%)]\tloss: {:.6f}'
-                            '\t|cpu usage: {:.0f}%| |ram usage: {:.0f}%|'
-                            .format(
-                                epoch, batch_id, len(batches_range),
-                                100 * batch_id / len(batches_range),
-                                loss,
-                                psutil.cpu_percent(),
-                                psutil.virtual_memory().percent,
-                            ))
+                        '\t|cpu usage: {:.0f}%| |ram usage: {:.0f}%|'
+                        .format(
+                            epoch,
+                            batch_id * X_batch.shape[0],
+                            len(train_loader) * X_batch.shape[0],
+                            100. * batch_id / len(train_loader),
+                            loss.data[0],
+                            psutil.cpu_percent(),
+                            psutil.virtual_memory().percent,
+                        ))
+
     return np.array(iter_losses).mean()

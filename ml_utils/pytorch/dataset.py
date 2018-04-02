@@ -7,7 +7,10 @@ from math import floor
 from sklearn.preprocessing import LabelBinarizer
 from torchvision import transforms
 from torch.utils.data.dataset import Dataset
-from torch import from_numpy, np
+import torch
+from torch import np
+
+from .profiling import Timer
 
 logger = logging.getLogger()
 
@@ -105,3 +108,49 @@ def train_valid_split(dataset, test_size=0.25, shuffle=False, random_seed=0):
     else:
         raise ValueError('%s should be an int or a float' % str)
     return indices[split:], indices[:split]
+
+
+class TsFcstDataset(Dataset):
+    def __init__(self, n_timestep, target_col, csv_path, ts_col_label,
+                 tz='UTC', cols_to_drop=[],
+                 sep=',', limit_load=None):
+
+        self.n_timestep = n_timestep
+
+        if limit_load:
+            logger.info('limit_load set to {} when reading {}.'.format(
+                limit_load, csv_path))
+
+        with Timer('Reading {}'.format(csv_path)):
+            df = pd.read_csv(csv_path, nrows=limit_load, sep=sep)
+            df[ts_col_label] = pd.to_datetime(df[ts_col_label])
+            df = df.set_index(ts_col_label).tz_localize(tz)
+            df = df.drop(columns=cols_to_drop)
+            df = df.sort_index()
+
+        logger.info("Shape of data: {}.".format(df.shape))
+        logger.info("Missing datas: \n{}.".format(df.isna().sum()))
+
+        # TODO: better NaN handle:
+        df = df.fillna(0)
+        self.df = df
+
+        self.X = df[df.columns.difference([target_col])].values
+        self.y = df[target_col].values
+        self.timeindex = self.df.index.values
+
+    def __getitem__(self, index):
+        """Return data at index."""
+        X_batch = self.X[index: (index + self.n_timestep - 1), :]
+        y_history = self.y[index: (index + self.n_timestep - 1)]
+        y_target = self.y[index + self.n_timestep]
+        # timeindex = self.timeindex[index: index + self.n_timestep]
+
+        # Convert to FloatTensor:
+        X_batch = torch.FloatTensor(X_batch)
+        y_history = torch.FloatTensor(y_history)
+        y_target = torch.FloatTensor([y_target])
+        return X_batch, y_history, y_target
+
+    def __len__(self):
+        return len(self.df.index) - self.n_timestep

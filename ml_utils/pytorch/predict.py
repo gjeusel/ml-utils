@@ -133,32 +133,32 @@ def predict_timeserie(X, encoder, decoder,
     return y_pred
 
 
-def validate_timeserie(X, y, encoder, decoder,
-                       train_size, n_timestep, batch_size):
-    y_pred = np.zeros(train_size - n_timestep + 1)
+def validate_da_rnn(valid_loader, encoder, decoder, score_func):
+    """Predict & compute a accuracy_score & fbeta_score."""
+    targets = []
+    predicted = []
 
     logger.info("Starting Validation")
-
-    range_main_loop = range(0, len(y_pred), batch_size)  # batch_size step
-    for i, _ in enumerate(tqdm(range_main_loop)):
-        batch_idx = np.array(range(len(y_pred)))[i : (i + batch_size)]
-        X_batch = np.zeros((len(batch_idx), n_timestep - 1, X.shape[1]))
-        y_history = np.zeros((len(batch_idx), n_timestep - 1))
-
-        # Construct X_batch
-        for j in range(len(batch_idx)):
-            local_range = range(batch_idx[j], batch_idx[j] + n_timestep - 1)
-            X_batch[j, :, :] = X[local_range, :]
-            y_history[j, :] = y[local_range]
-
-        X_batch = Variable(torch.from_numpy(X_batch).type(torch.FloatTensor))
-        y_history = Variable(torch.from_numpy(y_history).type(torch.FloatTensor))
+    for batch_id, (X_batch, y_history, y_target) in enumerate(valid_loader):
 
         if torch.cuda.is_available():
-            X_batch = X_batch.cuda()
-            y_history = y_history.cuda()
+            X_batch = X_batch.cuda(async=True)
+            y_history = y_history.cuda(async=True)
+            y_target = y_target.cuda(async=True)
+
+        # Volatile variables do not save intermediate results and build graphs for backprop, achieving massive memory savings.
+        X_batch = Variable(X_batch, volatile=True)
+        y_history = Variable(y_history, volatile=True)
+        y_target = Variable(y_target, volatile=True)
 
         _, input_encoded = encoder(X_batch)
-        y_pred[i:(i + batch_size)] = decoder(input_encoded, y_history).cpu().data.numpy()[:, 0]
+        y_pred = decoder(input_encoded, y_history)
 
-    return y_pred
+        predicted.append(y_pred.data.cpu().numpy()[:, 0])
+        targets.append(y_target.data.cpu().numpy())
+
+    predicted = np.concatenate(predicted)
+    targets = np.concatenate(targets)
+
+    score = score_func(y_true=targets, y_pred=predicted)
+    return score
