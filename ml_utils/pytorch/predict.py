@@ -1,5 +1,5 @@
 import logging
-import numpy as np
+from torch import np
 import torch
 from sklearn.metrics import accuracy_score, fbeta_score, classification_report
 import torch.nn.functional as F
@@ -99,38 +99,34 @@ def validate_image_classification(valid_loader, net, score_func, score_type='pro
     return score
 
 
-def predict_timeserie(X, encoder, decoder,
-                      train_size, n_timestep, batch_size):
-    y_pred = np.zeros(X.shape[0] - train_size)
+def predict_da_rnn(test_loader, encoder, decoder):
+    """Predict & compute a accuracy_score & fbeta_score."""
+    predicted = []
+    index = []
 
-    logger.info("Starting Prediction")
-
-    range_main_loop = range(0, len(y_pred), batch_size)  # batch_size step
-    for i, _ in enumerate(tqdm(range_main_loop)):
-        batch_idx = np.array(range(len(y_pred)))[i : (i + batch_size)]
-        X_batch = np.zeros((len(batch_idx), n_timestep - 1, X.shape[1]))
-        y_history = np.zeros((len(batch_idx), n_timestep - 1))
-
-        # Construct X_batch
-        for j in range(len(batch_idx)):
-            local_range = range(
-                batch_idx[j] + train_size - n_timestep,
-                batch_idx[j] + train_size - 1)
-
-            X_batch[j, :, :] = X[local_range, :]
-            y_history[j, :] = y[local_range]
-
-        X_batch = Variable(torch.from_numpy(X_batch).type(torch.FloatTensor))
-        y_history = Variable(torch.from_numpy(y_history).type(torch.FloatTensor))
+    logger.info("Starting Validation")
+    for batch_id, (X_batch, y_history, _, timeindex) in enumerate(tqdm(test_loader)):
 
         if torch.cuda.is_available():
-            X_batch = X_batch.cuda()
-            y_history = y_history.cuda()
+            X_batch = X_batch.cuda(async=True)
+            y_history = y_history.cuda(async=True)
+
+        # Volatile variables do not save intermediate results and build graphs for backprop, achieving massive memory savings.
+        X_batch = Variable(X_batch, volatile=True)
+        y_history = Variable(y_history, volatile=True)
 
         _, input_encoded = encoder(X_batch)
-        y_pred[i:(i + batch_size)] = decoder(input_encoded, y_history).cpu().data.numpy()[:, 0]
+        y_pred = decoder(input_encoded, y_history)
 
-    return y_pred
+        y_pred = y_pred.data.cpu().numpy()
+        predicted.append(y_pred.reshape(len(y_pred)))
+
+        timeindex = timeindex.numpy()
+        index.append(timeindex.reshape(len(timeindex)))
+
+    timeindex = np.concatenate(index)
+    predicted = np.concatenate(predicted)
+    return timeindex, predicted
 
 
 def validate_da_rnn(valid_loader, encoder, decoder, score_func):
@@ -139,7 +135,7 @@ def validate_da_rnn(valid_loader, encoder, decoder, score_func):
     predicted = []
 
     logger.info("Starting Validation")
-    for batch_id, (X_batch, y_history, y_target) in enumerate(valid_loader):
+    for batch_id, (X_batch, y_history, y_target, _) in enumerate(tqdm(valid_loader)):
 
         if torch.cuda.is_available():
             X_batch = X_batch.cuda(async=True)
@@ -154,8 +150,11 @@ def validate_da_rnn(valid_loader, encoder, decoder, score_func):
         _, input_encoded = encoder(X_batch)
         y_pred = decoder(input_encoded, y_history)
 
-        predicted.append(y_pred.data.cpu().numpy()[:, 0])
-        targets.append(y_target.data.cpu().numpy())
+        y_pred = y_pred.data.cpu().numpy()
+        predicted.append(y_pred.reshape(len(y_pred)))
+
+        y_target = y_target.data.cpu().numpy()
+        targets.append(y_target.reshape(len(y_target)))
 
     predicted = np.concatenate(predicted)
     targets = np.concatenate(targets)

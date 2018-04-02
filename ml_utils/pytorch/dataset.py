@@ -111,46 +111,38 @@ def train_valid_split(dataset, test_size=0.25, shuffle=False, random_seed=0):
 
 
 class TsFcstDataset(Dataset):
-    def __init__(self, n_timestep, target_col, csv_path, ts_col_label,
-                 tz='UTC', cols_to_drop=[],
-                 sep=',', limit_load=None):
+    def __init__(self, n_timestep, df, target_col, test_mode=False):
 
         self.n_timestep = n_timestep
-
-        if limit_load:
-            logger.info('limit_load set to {} when reading {}.'.format(
-                limit_load, csv_path))
-
-        with Timer('Reading {}'.format(csv_path)):
-            df = pd.read_csv(csv_path, nrows=limit_load, sep=sep)
-            df[ts_col_label] = pd.to_datetime(df[ts_col_label])
-            df = df.set_index(ts_col_label).tz_localize(tz)
-            df = df.drop(columns=cols_to_drop)
-            df = df.sort_index()
-
-        logger.info("Shape of data: {}.".format(df.shape))
-        logger.info("Missing datas: \n{}.".format(df.isna().sum()))
-
-        # TODO: better NaN handle:
-        df = df.fillna(0)
         self.df = df
+        self.test_mode = test_mode
 
         self.X = df[df.columns.difference([target_col])].values
         self.y = df[target_col].values
-        self.timeindex = self.df.index.values
+
+        assert pd.api.types.is_datetimetz(df.index)
+        self.df = df.tz_convert('UTC')
+        self.timeindex = self.df.index.astype(np.int64).values
 
     def __getitem__(self, index):
         """Return data at index."""
         X_batch = self.X[index: (index + self.n_timestep - 1), :]
         y_history = self.y[index: (index + self.n_timestep - 1)]
-        y_target = self.y[index + self.n_timestep]
-        # timeindex = self.timeindex[index: index + self.n_timestep]
+
+        # Timeindex of predicted register:
+        timeindex = self.timeindex[index + self.n_timestep]
 
         # Convert to FloatTensor:
         X_batch = torch.FloatTensor(X_batch)
         y_history = torch.FloatTensor(y_history)
-        y_target = torch.FloatTensor([y_target])
-        return X_batch, y_history, y_target
+
+        if not self.test_mode:
+            y_target = self.y[index + self.n_timestep]
+            y_target = torch.FloatTensor([y_target])
+        else:
+            y_target = []
+
+        return X_batch, y_history, y_target, timeindex
 
     def __len__(self):
         return len(self.df.index) - self.n_timestep

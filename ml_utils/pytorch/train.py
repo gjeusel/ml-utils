@@ -103,7 +103,7 @@ def train_image_classification(epoch, train_loader, net, loss_func, optimizer,
         loss.backward()
         optimizer.step()
         if batch_id % 100 == 0:
-            logger.info('Train epoch: {:03d} [{:04d}/{:04d} ({:.0f}%)]\tloss: {:.6f}'
+            logger.info('Train epoch: {:03d} [{:05d}/{:05d} ({:.0f}%)]\tloss: {:.6f}'
                         '\t|cpu usage: {:.0f}%| |ram usage: {:.0f}%|'
                         .format(
                             epoch,
@@ -127,7 +127,7 @@ def train_da_rnn(epoch, train_loader,
 
     iter_losses = []
 
-    for batch_id, (X_batch, y_history, y_target) in enumerate(train_loader):
+    for batch_id, (X_batch, y_history, y_target, _) in enumerate(train_loader):
 
         if torch.cuda.is_available():
             X_batch = X_batch.cuda(async=True)
@@ -157,7 +157,7 @@ def train_da_rnn(epoch, train_loader,
                                  loss.cpu().data[0], batch_id)
 
         if batch_id % 100 == 0:
-            logger.info('Train epoch: {:03d} [{:04d}/{:04d} ({:.0f}%)]\tloss: {:.6f}'
+            logger.info('Train epoch: {:03d} [{:05d}/{:05d} ({:.0f}%)]\tloss: {:.6f}'
                         '\t|cpu usage: {:.0f}%| |ram usage: {:.0f}%|'
                         .format(
                             epoch,

@@ -1,3 +1,8 @@
+import resource
+rlimit = resource.getrlimit(resource.RLIMIT_NOFILE)
+resource.setrlimit(resource.RLIMIT_NOFILE, (2048, rlimit[1]))
+# https://github.com/pytorch/pytorch/issues/973
+
 import logging
 
 import pandas as pd
@@ -23,7 +28,7 @@ from .predict import predict_image_classification, validate_image_classification
 from .dataset import TsFcstDataset
 from .dual_stagged_attention import encoder, decoder
 from .train import train_da_rnn
-from .predict import validate_da_rnn
+from .predict import predict_da_rnn, validate_da_rnn
 
 logger = logging.getLogger(__file__)
 
@@ -135,7 +140,7 @@ class ImageClassification():
         """Continue training a network."""
         epoch_start, net_state_dict, score, optimizer_state_dict = load_snapshot(
             pth_path)
-        assert epochs >= epochs
+        assert epochs >= epoch_start
 
         net.load_state_dict(net_state_dict)
         optimizer.load_state_dict(optimizer_state_dict)
@@ -217,19 +222,14 @@ class TimeserieFcst_DA_RNN():
 
         self.tb_writer = tb_writer
 
-    def set_train_loaders(self, target_col, train_csvpath,
-                          ts_col_label='timestamp', sep=',',
-                          cols_to_drop=[],
+    def set_train_loaders(self, df, target_col,
                           sampler=SubsetRandomSampler,
-                          perc_train_valid=0.1,
-                          debug=False,
-                          ):
+                          perc_train_valid=0.1):
 
-        limit_load = 100 if debug else None
-        dataset = TsFcstDataset(n_timestep=self.n_timestep, target_col=target_col,
-                                csv_path=train_csvpath, ts_col_label=ts_col_label,
-                                cols_to_drop=cols_to_drop, sep=sep,
-                                limit_load=limit_load)
+        self.df = df
+
+        dataset = TsFcstDataset(n_timestep=self.n_timestep,
+                                df=df, target_col=target_col)
 
         # Creating a validation split
         train_idx, valid_idx = train_valid_split(dataset, perc_train_valid,
@@ -243,7 +243,7 @@ class TimeserieFcst_DA_RNN():
 
         # Both dataloader loads from the same dataset but with different indices
         train_loader = DataLoader(dataset,
-                                  # sampler=train_sampler,
+                                  sampler=train_sampler,
                                   batch_size=self.batch_size,
                                   num_workers=self.num_workers,
                                   # pin_memory=True,
@@ -261,21 +261,22 @@ class TimeserieFcst_DA_RNN():
 
         self.ncols = dataset.df.shape[1]  # used at encoder init time
 
+        df_train = df.iloc[train_idx]
+        df_valid = df.iloc[valid_idx]
+        return df_train, df_valid
+
     def set_encoder_decoder(self,
                             encoder_hidden_size=64, decoder_hidden_size=64,
-                            n_timestep=10,
                             learning_rate=0.01,
                             ):
 
-        self.n_timestep = n_timestep
-
         self.encoder = encoder(input_size=self.ncols-1,
                                hidden_size=encoder_hidden_size,
-                               n_timestep=n_timestep)
+                               n_timestep=self.n_timestep)
 
         self.decoder = decoder(encoder_hidden_size=encoder_hidden_size,
                                decoder_hidden_size=decoder_hidden_size,
-                               n_timestep=n_timestep)
+                               n_timestep=self.n_timestep)
 
         if torch.cuda.is_available():
             self.encoder = self.encoder.cuda()
@@ -293,6 +294,7 @@ class TimeserieFcst_DA_RNN():
 
     def train(self, epochs=10, loss_func=nn.MSELoss()):
 
+        best_score = 10**10
         for epoch in range(epochs):
             with Timer('Epoch {}'.format(epoch)):
                 epoch_loss = train_da_rnn(epoch, self.train_loader,
@@ -312,7 +314,127 @@ class TimeserieFcst_DA_RNN():
                 self.tb_writer.add_scalar('data/epoch_loss', epoch_loss, epoch)
                 self.tb_writer.add_scalar('data/score', score, epoch)
 
-            # if best_score > score and epoch > 4:
-            #     best_score = score
-            #     save_snapshot(epoch+1, net, score,
-            #                     optimizer, self.snapshot_dir)
+            if best_score > score and epoch > 4:
+                best_score = score
+                save_snapshot(epoch+1, self.encoder, score, self.encoder_optimizer,
+                              self.snapshot_dir)
+                save_snapshot(epoch+1, self.decoder, score, self.decoder_optimizer,
+                              self.snapshot_dir)
+
+    def continue_training(self, epochs,
+                          encoder_pth_path, decoder_pth_path,
+                          loss_func=nn.MSELoss()):
+        """Continue training."""
+        epoch_start, encoder_state_dict, score, encoder_optimizer_state_dict = load_snapshot(
+            encoder_pth_path)
+        epoch_start, decoder_state_dict, score, decoder_optimizer_state_dict = load_snapshot(
+            decoder_pth_path)
+
+        assert epochs >= epoch_start
+
+        self.encoder.load_state_dict(encoder_state_dict)
+        self.decoder.load_state_dict(decoder_state_dict)
+
+        self.encoder_optimizer.load_state_dict(encoder_optimizer_state_dict)
+        self.decoder_optimizer.load_state_dict(decoder_optimizer_state_dict)
+
+        if torch.cuda.is_available():
+            self.encoder = self.encoder.cuda()
+            self.decoder = self.decoder.cuda()
+            self.encoder = nn.DataParallel(self.encoder)
+            self.decoder = nn.DataParallel(self.decoder)
+
+        best_score = 10**10
+        for epoch in range(epoch_start, epochs):
+            with Timer('Epoch {}'.format(epoch)):
+                epoch_loss = train_da_rnn(epoch, self.train_loader,
+                                        self.encoder_optimizer, self.decoder_optimizer,
+                                        self.encoder, self.decoder, loss_func,
+                                        self.tb_writer)
+
+
+                score = validate_da_rnn(self.valid_loader,
+                                        self.encoder, self.decoder,
+                                        score_func=mean_squared_error)
+
+            logger.info('Mean epoch {} loss: {:.6f}'.format(epoch, epoch_loss))
+            logger.info('Score epoch {}: {:.6f}'.format(epoch, score))
+
+            if self.tb_writer:
+                self.tb_writer.add_scalar('data/epoch_loss', epoch_loss, epoch)
+                self.tb_writer.add_scalar('data/score', score, epoch)
+
+            if best_score > score and epoch > 4:
+                best_score = score
+                save_snapshot(epoch+1, self.encoder, score, self.encoder_optimizer,
+                              self.snapshot_dir)
+                save_snapshot(epoch+1, self.decoder, score, self.decoder_optimizer,
+                              self.snapshot_dir)
+
+    def predict(self, encoder_pth_path, decoder_pth_path,
+                df, target_col):
+
+        dataset = TsFcstDataset(n_timestep=self.n_timestep, target_col=target_col,
+                                df=df, test_mode=True)
+
+        test_loader = DataLoader(dataset,
+                                 batch_size=self.batch_size,
+                                 num_workers=self.num_workers,
+                                 # pin_memory=True,
+                                 )
+
+        self.test_loader = test_loader
+
+        epoch, encoder_state_dict, score, _ = load_snapshot(
+            encoder_pth_path)
+        epoch, decoder_state_dict, score, _ = load_snapshot(
+            decoder_pth_path)
+
+        self.encoder.load_state_dict(encoder_state_dict)
+        self.decoder.load_state_dict(decoder_state_dict)
+
+        if torch.cuda.is_available():
+            self.encoder = self.encoder.cuda()
+            self.decoder = self.decoder.cuda()
+            self.encoder = nn.DataParallel(self.encoder)
+            self.decoder = nn.DataParallel(self.decoder)
+
+        timeindex, predicted = predict_da_rnn(
+            self.test_loader, self.encoder, self.decoder)
+
+        df_pred = pd.DataFrame(data={'predicted': predicted},
+                               index=pd.to_datetime(timeindex).tz_localize('UTC'))
+        return df_pred
+
+
+class ChallengeTimeserieFcst_DA_RNN(TimeserieFcst_DA_RNN):
+
+    def set_train_loaders(self, target_col, train_csvpath,
+                          ts_col_label='timestamp', sep=',',
+                          cols_to_drop=[],
+                          sampler=SubsetRandomSampler,
+                          perc_train_valid=0.1,
+                          debug=False,
+                          ):
+
+        limit_load = 100 if debug else None
+        if limit_load:
+            logger.info('limit_load set to {} when reading {}.'.format(
+                limit_load, train_csvpath))
+
+        with Timer('Reading {}'.format(train_csvpath)):
+            df = pd.read_csv(train_csvpath, nrows=limit_load, sep=sep)
+            df[ts_col_label] = pd.to_datetime(df[ts_col_label])
+            df = df.set_index(ts_col_label).tz_localize('UTC')
+            df = df.drop(columns=cols_to_drop)
+            df = df.sort_index()
+
+        logger.info("Shape of data: {}.".format(df.shape))
+        # logger.info("Missing datas: \n{}.".format(df.isna().sum()))
+
+        # TODO: better NaN handle:
+        df = df.fillna(0)
+
+        return super().set_train_loaders(
+            df=df, target_col=target_col,
+            sampler=sampler, perc_train_valid=perc_train_valid)
