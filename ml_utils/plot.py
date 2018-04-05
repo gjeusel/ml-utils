@@ -2,17 +2,16 @@ from pathlib import Path
 import copy
 import colorlover
 
-from matplotlib.colors import ListedColormap
-import matplotlib.pyplot as plt
-
 import plotly
 import plotly.graph_objs as go
 
-import numpy as np
-import seaborn as sns
 import pandas as pd
+import cufflinks as cf  # bind ploty to pandas dataframes in IPython notebook
 
 from .analytics import detect_frequency
+
+
+cf.set_config_file(offline=True, world_readable=True, theme='white')
 
 
 class cl:
@@ -36,85 +35,20 @@ class cl:
     black = colorlover.scales['11']['div']['RdGy'][10]
 
 
-cmap_redblue = ListedColormap(sns.color_palette("RdBu_r", 20).as_hex())
+def offline2path(fig, offline):
+    if offline:
+        tmp_dir = Path('/tmp')
+        if tmp_dir.exists():
+            fpath = tmp_dir / 'output.html'
+        else:
+            fpath = Path('output.html')
 
+        plotly.offline.plot(fig, filename=fpath.as_posix())
+    else:
+        pass  # TODO
 
-def get_dist_mat(df, target_col, metric='euclidean',
-                 figsize=(20, 20), cmap=cmap_redblue,):
-    X = df.drop(target_col, axis=1).values
-    y = df[target_col].values
+    return fig
 
-    # Sorting according to clusters to make then apparent :
-    M = np.concatenate((X, y[:, np.newaxis]), axis=1)
-    # Sort according to last column :
-    M = M[M[:, -1].argsort()]
-    M = M[0: -1]  # remove last column
-
-    from scipy.spatial.distance import pdist, squareform
-    dist_mat = pdist(M, metric=metric)
-    # translates this flattened form into a full matrix
-    dist_mat = squareform(dist_mat)
-
-    fig, ax = plt.subplots(figsize=figsize)
-    im = ax.imshow(dist_mat, cmap=cmap, interpolation='none')
-
-    # get colorbar smaller than matrix
-    plt.colorbar(im, fraction=0.046, pad=0.04)
-
-    # want a more natural, table-like display
-    ax.invert_yaxis()
-
-    # Move top xaxes :
-    ax.xaxis.tick_top()
-    ax.xaxis.set_label_position('top')
-
-    plt.axis('off')
-
-    return dist_mat, fig, ax
-
-
-def get_corr_mat(df, figsize=(20, 20), cmap=cmap_redblue):
-    # Compute correlation matrix
-    corrmat = df.corr()
-
-    # Set up the matplotlib figure
-    fig, ax = plt.subplots(figsize=figsize)
-
-    # Set ax & colormap with seaborn.
-    ax = sns.heatmap(corrmat, vmin=-1, vmax=1, center=0,
-                     square=True, linewidths=1, xticklabels=True,
-                     yticklabels=True,
-                     cmap=cmap)
-
-    ax.set_xticklabels(df.columns, minor=False, rotation='vertical')
-    ax.set_yticklabels(df.columns[df.shape[1]::-1],
-                       minor=False, rotation='horizontal')
-
-    return corrmat, fig, ax
-
-
-def boxplot(df, normalize=True, figsize=(20, 20)):
-    sns.set(style="ticks")
-    # Initialize the figure with a logarithmic x axis
-    fig, ax = plt.subplots(figsize=figsize)
-
-    if normalize:
-        df = (df - df.mean()) / (df.max() - df.min())
-
-    sns.boxplot(data=df,
-                orient='h',
-                # whis=whis # Proportion of the IQR past the low and high quartiles to extend the plot whiskers. Points outside this range will be identified as outliers.
-                )
-
-    # Tweak the visual presentation
-    ax.xaxis.grid(True)
-    ax.set(ylabel="")
-    sns.despine(trim=True, left=True)
-
-    return fig, ax
-
-
-# Plotly part:
 
 def add_shape_now_vertical_line(layout, ymin, ymax, xaxis='x1', yaxis='y1'):
     now = pd.Timestamp.now('CET').replace(microsecond=0).tz_localize(None)
@@ -258,13 +192,60 @@ def timeseriesplot(df, csv_spec_path=None, offline=True):
 
     fig = {'layout': layout, 'data': traces}
 
-    if offline:
-        tmp_dir = Path('/tmp')
-        if tmp_dir.exists():
-            fpath = tmp_dir / 'output.html'
-        else:
-            fpath = Path('output.html')
+    return offline2path(fig, offline)
 
-        plotly.offline.plot(fig, filename=fpath.as_posix())
 
-    return fig
+def corrmatrix_chart(df, offline=True):
+    layout = {
+        "margin": {
+            "r": 60,
+            "t": 60,
+            "b": 100,
+            "l": 400,
+            "pad": 10,
+        },
+        # "title": "Correlation Matrix",
+        "autosize": False,
+        "height": 2 * 500,
+        "width": 2 * 500 + 300,
+        "yaxis": {"nticks": len(df.columns)},
+    }
+
+    fig = df.corr().iplot(kind='heatmap', colorscale='rdbu',
+                          layout=layout, asFigure=True)
+
+    fig['data'].update({'xgap': 3})
+    fig['data'].update({'ygap': 3})
+
+    return offline2path(fig, offline)
+
+
+def filledline_chart(df, offline=True):
+    fig = df.iplot(kind='scatter',
+                   colorscale='spectral', fill=True, asFigure=True)
+    return offline2path(fig, offline)
+
+
+def boxplot_chart(df, normalize=True, offline=True):
+    layout = {
+        "margin": {
+            "b": 200,
+        },
+        "title": "BoxPlot",
+        "autosize": True,
+    }
+
+    if normalize:
+        from sklearn import preprocessing
+        x = df.values
+        min_max_scaler = preprocessing.MinMaxScaler()
+        x_scaled = min_max_scaler.fit_transform(x)
+        df = pd.DataFrame(x_scaled, columns=df.columns)
+
+    fig = df.iplot(kind='box', colorscale='rdylbu',
+                   layout=layout, asFigure=True)
+    return offline2path(fig, offline=True)
+
+
+def iplot2html(fig):
+    return offline2path(fig, offline=True)
