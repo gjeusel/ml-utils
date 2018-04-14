@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 import copy
 import colorlover
@@ -5,12 +6,16 @@ import colorlover
 import plotly
 import plotly.graph_objs as go
 
+from sklearn import preprocessing
+
+import numpy as np
 import pandas as pd
 import cufflinks as cf  # bind ploty to pandas dataframes in IPython notebook
 
 from .analytics import detect_frequency
 
 
+logger = logging.getLogger(__name__)
 cf.set_config_file(offline=True, world_readable=True, theme='white')
 
 
@@ -195,7 +200,7 @@ def timeseriesplot(df, csv_spec_path=None, offline=True):
     return offline2path(fig, offline)
 
 
-def corrmatrix_chart(df, offline=True):
+def corrmatrix_chart(df, colorscale='rdbu', offline=True):
     layout = {
         "margin": {
             "r": 60,
@@ -211,12 +216,36 @@ def corrmatrix_chart(df, offline=True):
         "yaxis": {"nticks": len(df.columns)},
     }
 
-    fig = df.corr().iplot(kind='heatmap', colorscale='rdbu',
-                          layout=layout, asFigure=True)
+    fig = df.corr().iplot(kind='heatmap', colorscale=colorscale,
+                          layout=layout, asFigure=True,
+                          center_scale=0,
+                          )
 
     fig['data'].update({'xgap': 3})
     fig['data'].update({'ygap': 3})
 
+    return offline2path(fig, offline)
+
+
+def missingvalues_chart(df, colorscale='reds', offline=True):
+    layout = {
+        "margin": {
+            "r": 60,
+            "t": 60,
+            "b": 100,
+            "l": 400,
+            "pad": 10,
+        },
+        "yaxis": {"nticks": len(df.columns)},
+    }
+
+    df = df.isna().astype(int)
+    # df = df.replace(0, np.nan)  # not better for plot perfs
+    fig = df.iplot(kind='heatmap', colorscale=colorscale,
+                   layout=layout, asFigure=True)
+
+    fig['data'].update({'xgap': 3})
+    fig['data'].update({'ygap': 3})
     return offline2path(fig, offline)
 
 
@@ -226,25 +255,25 @@ def filledline_chart(df, offline=True):
     return offline2path(fig, offline)
 
 
-def boxplot_chart(df, normalize=True, offline=True):
-    layout = {
-        "margin": {
-            "b": 200,
-        },
-        "title": "BoxPlot",
-        "autosize": True,
-    }
+def boxplot_chart(df, normalize=True, colorscale='rdylbu', offline=True):
+    layout = {"margin": {"b": 200},
+              "autosize": True}
 
     if normalize:
-        from sklearn import preprocessing
-        x = df.values
         min_max_scaler = preprocessing.MinMaxScaler()
-        x_scaled = min_max_scaler.fit_transform(x)
-        df = pd.DataFrame(x_scaled, columns=df.columns)
+        for col in df.columns:
+            idx = df[col].dropna().index
+            if idx.empty:
+                df = df.drop(columns=col)
+                continue
 
-    fig = df.iplot(kind='box', colorscale='rdylbu',
+            x = df[col].dropna().values
+            x_scaled = min_max_scaler.fit_transform(x.reshape(-1, 1))
+            df[col].update(pd.Series(data=x_scaled[:, 0], index=idx))
+
+    fig = df.iplot(kind='box', colorscale=colorscale,
                    layout=layout, asFigure=True)
-    return offline2path(fig, offline=True)
+    return offline2path(fig, offline)
 
 
 def iplot2html(fig):
