@@ -38,6 +38,15 @@ def get_main_div():
 
 
 def register_dashboard(df, server):
+    """
+    ..ipython :
+        # Use fire to laucnh it ?
+        from flask import Flask
+        server = Flask(__name__)
+
+        register_dashboard(df, server)
+        server.debug(debug=True)
+    """
     app = dash.Dash(name='statistical_analysis', server=server,
                     url_base_pathname='/',
                     request_pathname_prefix='/statistical_analysis')
