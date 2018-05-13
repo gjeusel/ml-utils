@@ -41,6 +41,20 @@ class ImageClassification():
                  batch_size=4, num_workers=4,
                  tb_writer=None,
                  ):
+        """
+        Args:
+            train_csvpath (pathlib.Path): path to csv with train informations.
+            train_imgdir (pathlib.Path): path to images for train purpose.
+            test_csvpath (pathlib.Path): path to csv with test informations.
+                Defaults to None if you won't predict for unknown labels.
+            test_imgdir (pathlib.Path): path to images for test purpose.
+                Defaults to None if you won't predict for unknown labels.
+            sub_dir (pathlib.Path): path for submission file outputs.
+            batch_size (int): size of batch.
+            num_workers (int): number of workers.
+            tb_writer (tensorboardX.SummaryWriter): for reporting purpose.
+                Defaults to None if you don't care.
+        """
 
         self.train_csvpath = train_csvpath
         self.train_imgdir = train_imgdir
@@ -62,6 +76,18 @@ class ImageClassification():
                           debug=False,
                           limit_load_at_debug=100,
                           ):
+        """Set all variables to handle images loaders for train purpose.
+
+        Args:
+            ds_transform_augmented (torchvision.transforms.Compose): image transformations
+                to applies for training images. (ds is for dataset)
+            ds_transform_raw (torchvision.transforms.Compose): image transformations
+                to applies for validation and/or test sets. (With no image augmentation
+                techniques like random flips or rotation ...)
+            perc_train_valid (float): percentage of datas to keep for validation purpose.
+            multilabel (bool): if is a multilabel classification problem.
+            debug (bool): if debug, then limit number of images loaded to limit_load_at_debug.
+        """
 
         self.ds_transform_augmented = ds_transform_augmented
         self.ds_transform_raw = ds_transform_raw
@@ -83,8 +109,8 @@ class ImageClassification():
         train_idx, valid_idx = train_valid_split(X_train, perc_train_valid)
 
         if sampler is not None:
-            train_sampler = SubsetRandomSampler(train_idx)
-            valid_sampler = SubsetRandomSampler(valid_idx)
+            train_sampler = sampler(train_idx)
+            valid_sampler = sampler(valid_idx)
         else:
             train_sampler, valid_sampler = None, None
 
@@ -107,8 +133,43 @@ class ImageClassification():
         self.train_idx, self.valid_idx = train_idx, valid_idx
         self.train_loader, self.valid_loader = train_loader, valid_loader
 
-    def train(self, epochs, net, loss_func, optimizer, score_func, score_type='proba'):
-        """Train the network."""
+    def set_test_loaders(self, ds_transform_raw, multilabel=False,
+                         debug=False, limit_load_at_debug=100):
+
+        if None in [self.test_csvpath, self.test_imgdir]:
+            raise ValueError('You forgot to set either test_csvpath or test_imgdir')
+
+        limit_load = limit_load_at_debug if debug else None
+        X_test = CustomDataset(self.test_csvpath, self.test_imgdir,
+                               transform=ds_transform_raw,
+                               limit_load=limit_load)
+
+        test_loader = DataLoader(X_test,
+                                 batch_size=self.batch_size,
+                                 num_workers=self.num_workers,
+                                 # pin_memory=True,
+                                 )
+
+        self.X_test, self.test_loader = X_test, test_loader
+
+
+    def train(self, epochs, net, loss_func, optimizer,
+              score_func, score_higher_is_better=True, score_type='proba'):
+        """Train the network.
+
+        Args:
+            epochs (int): number of epochs max for whichto iterate.
+            net (Upper Class of torch.nn.Module): your networks.
+            loss_func (function): your loss function (among torch.nn loss functions for example.)
+            optimizer (torch.optim.something): your optimizer
+            score_func (function): used to compute a score at validation time.
+            score_higher_is_better (bool): should the score be considerated better
+                if higher or not.
+            score_type (str): among ['proba', 'class'], used at validation time.
+                Describe how the output of the network should be considerated depending
+                on the score_func choosen.
+                Defaults to 'proba'.
+        """
 
         if torch.cuda.is_available():
             net.cuda()
@@ -132,15 +193,36 @@ class ImageClassification():
                 if self.tb_writer:
                     self.tb_writer.add_scalar('data/score', score, epoch)
 
-                if best_score > score and epoch > 4:
+                if score_higher_is_better:
+                    is_better = best_score < score
+                else:
+                    is_better = best_score > score
+
+                if is_better and epoch > 10:
                     best_score = score
                     save_snapshot(epoch+1, net, score,
                                   optimizer, self.snapshot_dir)
 
         self.net = net
 
-    def continue_training(self, epochs, net, loss_func, optimizer, pth_path):
-        """Continue training a network."""
+    def continue_training(self, pth_path, epochs, net, loss_func, optimizer,
+                          score_func, score_higher_is_better=True, score_type='proba'):
+        """Continue training a network.
+
+        Args:
+            pth_path (pathlib.Path): path to snapshot.
+            epochs (int): number of epochs max for whichto iterate.
+            net (Upper Class of torch.nn.Module): same networks used to obtain pth_path snapshot.
+            loss_func (function): your loss function (among torch.nn loss functions for example.)
+            optimizer (torch.optim.something): your optimizer
+            score_func (function): used to compute a score at validation time.
+            score_higher_is_better (bool): should the score be considerated better
+                if higher or not.
+            score_type (str): among ['proba', 'class'], used at validation time.
+                Describe how the output of the network should be considerated depending
+                on the score_func choosen.
+                Defaults to 'proba'.
+        """
         epoch_start, net_state_dict, score, optimizer_state_dict = load_snapshot(
             pth_path)
         assert epochs >= epoch_start
@@ -161,35 +243,36 @@ class ImageClassification():
                     epoch, self.train_loader, net, loss_func, optimizer)
 
                 score = validate_image_classification(self.valid_loader, net)
+
                 if self.tb_writer:
                     self.tb_writer.add_scalar('data/score', score, epoch)
 
-                if best_score < score:
+                if score_higher_is_better:
+                    is_better = best_score < score
+                else:
+                    is_better = best_score > score
+
+                if is_better and epoch > 10:
                     best_score = score
-                    save_snapshot(epoch+1, net, score, optimizer)
+                    save_snapshot(epoch+1, net, score,
+                                  optimizer, self.snapshot_dir)
 
-    def predict(self, net, pth_path, ds_transform_raw, score_type='proba',
-                batch_size=4, num_workers=4, debug=False):
+    def predict_for_submission(self, net, pth_path,
+                               ds_transform_raw, multilabel=False,
+                               output_type='proba',
+                               batch_size=4, num_workers=4, debug=False):
+        """Predict """
 
-        limit_load = 100 if debug else None
-        X_test = CustomDataset(self.test_csvpath, self.test_imgdir,
-                               transform=ds_transform_raw,
-                               limit_load=limit_load,
-                               )
+        self.set_test_loaders(ds_transform_raw=ds_transform_raw, multilabel=multilabel)
 
-        test_loader = DataLoader(X_test,
-                                 batch_size=self.batch_size,
-                                 num_workers=self.num_workers,
-                                 # pin_memory=True,
-                                 )
-
-        self.X_test, self.test_loader = X_test, test_loader
-
-        # Load net from best iteration
+        # Load net
         epoch, net_state_dict, score, _ = load_snapshot(pth_path)
         net.load_state_dict(net_state_dict)
 
-        return predict_image_classification(test_loader, net, score_type=score_type)
+        # Predict
+        y_pred = predict_image_classification(test_loader, net, output_type=output_type)
+
+        return y_pred
 
     def write_submission_file(self, predicted, labels):
         # Submission
@@ -287,12 +370,13 @@ class TimeserieFcst_DA_RNN():
             self.encoder = nn.DataParallel(self.encoder)
             self.decoder = nn.DataParallel(self.decoder)
 
-
         self.encoder_optimizer = optim.Adam(
-            params=filter(lambda p: p.requires_grad, self.encoder.parameters()),
+            params=filter(lambda p: p.requires_grad,
+                          self.encoder.parameters()),
             lr=learning_rate)
         self.decoder_optimizer = optim.Adam(
-            params=filter(lambda p: p.requires_grad, self.decoder.parameters()),
+            params=filter(lambda p: p.requires_grad,
+                          self.decoder.parameters()),
             lr=learning_rate)
 
     def train(self, epochs=10, loss_func=nn.MSELoss()):
@@ -301,10 +385,9 @@ class TimeserieFcst_DA_RNN():
         for epoch in range(epochs):
             with Timer('Epoch {}'.format(epoch)):
                 epoch_loss = train_da_rnn(epoch, self.train_loader,
-                                        self.encoder_optimizer, self.decoder_optimizer,
-                                        self.encoder, self.decoder, loss_func,
-                                        self.tb_writer)
-
+                                          self.encoder_optimizer, self.decoder_optimizer,
+                                          self.encoder, self.decoder, loss_func,
+                                          self.tb_writer)
 
                 score = validate_da_rnn(self.valid_loader,
                                         self.encoder, self.decoder,
@@ -351,10 +434,9 @@ class TimeserieFcst_DA_RNN():
         for epoch in range(epoch_start, epochs):
             with Timer('Epoch {}'.format(epoch)):
                 epoch_loss = train_da_rnn(epoch, self.train_loader,
-                                        self.encoder_optimizer, self.decoder_optimizer,
-                                        self.encoder, self.decoder, loss_func,
-                                        self.tb_writer)
-
+                                          self.encoder_optimizer, self.decoder_optimizer,
+                                          self.encoder, self.decoder, loss_func,
+                                          self.tb_writer)
 
                 score = validate_da_rnn(self.valid_loader,
                                         self.encoder, self.decoder,

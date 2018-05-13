@@ -9,7 +9,7 @@ from tqdm import tqdm
 logger = logging.getLogger(__name__)
 
 
-def predict_image_classification(test_loader, net, score_type='proba'):
+def predict_image_classification(test_loader, net, output_type='proba'):
     """Predict values for test_loader datas with net."""
     net.eval()
     proba_pred = []
@@ -44,8 +44,6 @@ def predict_image_classification(test_loader, net, score_type='proba'):
         return class_pred
     else:
         raise ValueError
-
-    return np.concatenate(class_pred)
 
 
 def validate_image_classification(valid_loader, net, score_func, score_type='proba'):

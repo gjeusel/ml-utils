@@ -12,7 +12,18 @@ logger = logging.getLogger(__name__)
 
 def lr_scheduler(optimizer, epoch, init_lr=0.01, lr_decay_epoch=7,
                  tb_writer=None):
-    """Decay learning rate by a factor of 0.1 every lr_decay_epoch epochs."""
+    """Decay learning rate by a factor of 0.1 every lr_decay_epoch epochs.
+
+    Args:
+        optimizer (torch.optim.something): your optimizer
+        epoch (int): epoch number
+        init_lr (float): initial learning_rate value
+        lr_decay_epoch (int): learning rate modulo for which to decay learning rate.
+        tb_writer (tensorboardX.SummaryWriter): for reporting purpose.
+
+    Returns:
+        optimizer with learning_rate updated
+    """
     lr = init_lr * (0.1**(epoch // lr_decay_epoch))
 
     if epoch % lr_decay_epoch == 0:
@@ -73,7 +84,7 @@ def train_image_classification(epoch, train_loader, net, loss_func, optimizer,
     """Unique epoch computation.
 
     Args:
-        epoch (int): epoch number, used for learning_rate scheduling.
+        epoch (int): epoch number, used for learning_rate scheduling & log.
         train_loader (torch.utils.data.dataloader.DataLoader): data loader for
             training purpose.
         net: your neural network
