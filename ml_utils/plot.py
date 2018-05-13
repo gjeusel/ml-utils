@@ -1,7 +1,6 @@
 import logging
 from pathlib import Path
 import copy
-import colorlover
 
 import plotly
 import plotly.graph_objs as go
@@ -11,33 +10,14 @@ from sklearn import preprocessing
 import numpy as np
 import pandas as pd
 import cufflinks as cf  # bind ploty to pandas dataframes in IPython notebook
+import colorlover
 
 from .analytics import detect_frequency
+from .colors import cl
 
 
 logger = logging.getLogger(__name__)
 cf.set_config_file(offline=True, world_readable=True, theme='white')
-
-
-class cl:
-    # cf for colors: https://plot.ly/ipython-notebooks/color-scales/
-    brown = colorlover.scales['11']['div']['BrBG'][2]
-    brown_lighter = colorlover.scales['11']['div']['BrBG'][3]
-    dark_red = '#8B0000'
-    red = colorlover.scales['11']['div']['RdYlBu'][0]
-    red_lighter = colorlover.scales['11']['div']['RdYlGn'][1]
-    orange = colorlover.scales['11']['div']['RdYlGn'][2]
-    orange_lighter = colorlover.scales['11']['div']['RdYlGn'][3]
-    yellow = colorlover.scales['11']['div']['Spectral'][4]
-    green_darker = colorlover.scales['11']['div']['RdYlGn'][10]
-    green = colorlover.scales['11']['div']['RdYlGn'][9]
-    green_lighter = colorlover.scales['11']['div']['RdYlGn'][7]
-    blue = colorlover.scales['11']['div']['RdYlBu'][9]
-    blue_lighter = colorlover.scales['11']['div']['RdYlBu'][7]
-    purple = colorlover.scales['11']['div']['PRGn'][2]
-    grey = colorlover.scales['11']['div']['RdGy'][7]
-    grey_darker = colorlover.scales['11']['div']['RdGy'][8]
-    black = colorlover.scales['11']['div']['RdGy'][10]
 
 
 def offline2path(fig, offline):
