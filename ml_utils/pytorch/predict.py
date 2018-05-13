@@ -1,5 +1,5 @@
 import logging
-from torch import np
+import numpy as np
 import torch
 from sklearn.metrics import accuracy_score, fbeta_score, classification_report
 import torch.nn.functional as F

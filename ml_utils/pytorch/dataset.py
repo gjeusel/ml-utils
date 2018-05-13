@@ -4,17 +4,19 @@ import PIL
 import random
 from math import floor
 
+import numpy as np
+
 from sklearn.preprocessing import LabelBinarizer
 from torchvision import transforms
 from torch.utils.data.dataset import Dataset
 import torch
-from torch import np
 
 from .profiling import Timer
 
 logger = logging.getLogger()
 
 
+###   SHOULD LOOK OUT FOR ImageFolder in Torchvision ...
 class CustomDataset(Dataset):
     """Dataset wrapping images and target labels.
     Arguments:
@@ -42,6 +44,8 @@ class CustomDataset(Dataset):
 
         df = pd.read_csv(csv_path, index_col=0, nrows=limit_load)
         df.index.name = 'id'
+        assert len(df.columns) == 1
+        df.columns = ['label']
         ids_missing_mask = []
         for i, row in df.reset_index().iterrows():
             fpath = img_path / (str(int(row['id'])) + img_ext)
