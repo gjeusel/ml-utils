@@ -95,9 +95,9 @@ def train_image_classification(epoch, train_loader, net, loss_func, optimizer,
         optimizer.zero_grad()
         output = net(data)
 
-        loss = loss_func(output, target.long())
+        loss = loss_func(output, target)
         if tb_writer:
-            tb_writer.add_scalar('data/loss', loss.cpu().data[0],
+            tb_writer.add_scalar('data/loss', loss.cpu().item(),
                                  batch_id * (epoch + 1))
 
         loss.backward()
@@ -110,7 +110,7 @@ def train_image_classification(epoch, train_loader, net, loss_func, optimizer,
                             batch_id * len(data),
                             len(train_loader) * len(data),
                             100. * batch_id / len(train_loader),
-                            loss.data[0],
+                            loss.item(),
                             psutil.cpu_percent(),
                             psutil.virtual_memory().percent,
                         ))

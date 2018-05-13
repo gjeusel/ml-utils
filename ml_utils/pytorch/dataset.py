@@ -3,10 +3,11 @@ import pandas as pd
 import PIL
 import random
 from math import floor
+import ast
 
 import numpy as np
 
-from sklearn.preprocessing import LabelBinarizer
+from sklearn.preprocessing import LabelBinarizer, MultiLabelBinarizer
 from torchvision import transforms
 from torch.utils.data.dataset import Dataset
 import torch
@@ -33,6 +34,7 @@ class CustomDataset(Dataset):
                       transforms.ToTensor(),
                       transforms.Normalize(mean=(0.5, 0.5, 0.5),
                                            std=(0.5, 0.5, 0.5))]),
+                 multilabel=False,
                  limit_load=None):
 
         logger.info('Initializing dataset using {} with {}'.format(
@@ -56,6 +58,12 @@ class CustomDataset(Dataset):
                              "found: {}".format(
                                  df.index[[not i for i in ids_missing_mask]]))
 
+        if multilabel:
+            df['label'] = df['label'].apply(lambda x: ast.literal_eval(x))
+            lb = MultiLabelBinarizer()
+        else:
+            lb = LabelBinarizer()
+
         self.df = df
         self.img_path = img_path
         self.img_ext = img_ext
@@ -63,12 +71,10 @@ class CustomDataset(Dataset):
 
         self.ids = self.df.index
 
-        self.lb = LabelBinarizer()
+        self.lb = lb
+
         self.labels = self.df['label'].values
-        try:
-            self.labels_binarized = self.lb.fit_transform(self.df['label']).astype(np.float32)
-        except ValueError as e:
-            logger.debug(e)
+        self.labels_binarized = self.lb.fit_transform(self.df['label']).astype(np.float32)
 
     def __getitem__(self, index):
         """Return data at index."""
@@ -77,7 +83,7 @@ class CustomDataset(Dataset):
         if self.transform is not None:
             img = self.transform(img)
 
-        label = self.labels[index]
+        label = torch.tensor(self.labels_binarized[index])
         return img, label
 
     def __len__(self):

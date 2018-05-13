@@ -58,21 +58,25 @@ class ImageClassification():
                           ds_transform_augmented, ds_transform_raw,
                           sampler=SubsetRandomSampler,
                           perc_train_valid=0.1,
+                          multilabel=False,
                           debug=False,
+                          limit_load_at_debug=100,
                           ):
 
         self.ds_transform_augmented = ds_transform_augmented
         self.ds_transform_raw = ds_transform_raw
 
         # Loading the dataset
-        limit_load = 100 if debug else None
+        limit_load = limit_load_at_debug if debug else None
         X_train = CustomDataset(self.train_csvpath, self.train_imgdir,
                                 transform=ds_transform_augmented,
                                 limit_load=limit_load,
+                                multilabel=multilabel,
                                 )
         X_val = CustomDataset(self.train_csvpath, self.train_imgdir,
                               transform=ds_transform_raw,
                               limit_load=limit_load,
+                              multilabel=multilabel,
                               )
 
         # Creating a validation split
@@ -103,8 +107,7 @@ class ImageClassification():
         self.train_idx, self.valid_idx = train_idx, valid_idx
         self.train_loader, self.valid_loader = train_loader, valid_loader
 
-    def train(self, epochs, net, loss_func, optimizer,
-              score_func=log_loss, score_type='proba'):
+    def train(self, epochs, net, loss_func, optimizer, score_func, score_type='proba'):
         """Train the network."""
 
         if torch.cuda.is_available():

@@ -25,8 +25,7 @@ def predict_image_classification(test_loader, net, score_type='proba'):
         if torch.cuda.is_available():
             data = data.cuda(async=True)
 
-        # Volatile variables do not save intermediate results and build graphs for backprop, achieving massive memory savings.
-        data = Variable(data, volatile=True)
+        data = Variable(data)
 
         pred = net(data)
 
@@ -45,7 +44,6 @@ def predict_image_classification(test_loader, net, score_type='proba'):
         return class_pred
     else:
         raise ValueError
-
 
     return np.concatenate(class_pred)
 
@@ -68,9 +66,8 @@ def validate_image_classification(valid_loader, net, score_func, score_type='pro
         if torch.cuda.is_available():
             data, target = data.cuda(async=True), target.cuda(async=True)
 
-        # Volatile variables do not save intermediate results and build graphs for backprop, achieving massive memory savings.
-        data = Variable(data, volatile=True)
-        target = Variable(target, volatile=True)
+        data = Variable(data)
+        target = Variable(target)
 
         pred = net(data)
 
@@ -86,16 +83,16 @@ def validate_image_classification(valid_loader, net, score_func, score_type='pro
     class_pred = np.concatenate(class_pred)
     targets = np.concatenate(targets)
     # acc = accuracy_score(y_true=targets, y_pred=class_pred)
-    # fbeta2 = fbeta_score(y_true=targets, y_pred=class_pred, beta=2)
+    # fbeta1 = fbeta_score(y_true=targets, y_pred=class_pred, beta=1)
 
     if score_type == 'proba':
         score = score_func(y_true=targets, y_pred=proba_pred)
     elif score_type == 'class':
         score = score_func(y_true=targets, y_pred=class_pred)
+        logger.info(classification_report(y_true=targets, y_pred=class_pred))
     else:
         raise ValueError
 
-    logger.info(classification_report(y_true=targets, y_pred=class_pred))
     return score
 
 
