@@ -97,6 +97,7 @@ def train_image_classification(epoch, train_loader, net, loss_func, optimizer,
     net.train()  # set a bool to true, this has ony effect on dropout, batchnorm etc..
     optimizer = lr_scheduler(optimizer, epoch, tb_writer=tb_writer)
 
+    loss_per_batch = []
     for batch_id, (data, target) in enumerate(train_loader):
         if torch.cuda.is_available():
             data, target = data.cuda(async=True), target.cuda(async=True)
@@ -108,7 +109,8 @@ def train_image_classification(epoch, train_loader, net, loss_func, optimizer,
 
         loss = loss_func(output, target)
         if tb_writer:
-            tb_writer.add_scalar('data/loss', loss.cpu().item(),
+            loss_per_batch.append(loss.cpu().item())
+            tb_writer.add_scalar('data/loss_per_batch', loss.cpu().item(),
                                  batch_id * (epoch + 1))
 
         loss.backward()
@@ -126,6 +128,11 @@ def train_image_classification(epoch, train_loader, net, loss_func, optimizer,
                             psutil.virtual_memory().percent,
                         ))
 
+    mean_loss = np.mean(loss_per_batch)
+    logger.info('Mean Loss on {:03d}th epoch: {:.6f}'.format(epoch, mean_loss))
+
+    return np.mean(loss_per_batch)
+
 
 def train_da_rnn(epoch, train_loader,
                  encoder_optimizer, decoder_optimizer,
@@ -133,8 +140,10 @@ def train_da_rnn(epoch, train_loader,
                  loss_func,
                  tb_writer=None):
 
-    encoder_optimizer = lr_scheduler(encoder_optimizer, epoch, tb_writer=tb_writer)
-    decoder_optimizer = lr_scheduler(decoder_optimizer, epoch, tb_writer=tb_writer)
+    encoder_optimizer = lr_scheduler(
+        encoder_optimizer, epoch, tb_writer=tb_writer)
+    decoder_optimizer = lr_scheduler(
+        decoder_optimizer, epoch, tb_writer=tb_writer)
 
     iter_losses = []
 

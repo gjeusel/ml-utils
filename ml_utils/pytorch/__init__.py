@@ -68,6 +68,8 @@ class ImageClassification():
 
         self.tb_writer = tb_writer
 
+    # Loaders settings methods:
+
     def set_train_loaders(self,
                           ds_transform_augmented, ds_transform_raw,
                           sampler=SubsetRandomSampler,
@@ -152,6 +154,7 @@ class ImageClassification():
 
         self.X_test, self.test_loader = X_test, test_loader
 
+    # Train & continue Training methods:
 
     def train(self, epochs, net, loss_func, optimizer,
               score_func, score_higher_is_better=True, score_type='proba'):
@@ -181,7 +184,7 @@ class ImageClassification():
             with Timer('Epoch {}'.format(epoch)):
 
                 # Train and validate
-                train_image_classification(
+                mean_loss_epoch = train_image_classification(
                     epoch, self.train_loader, net, loss_func, optimizer,
                     self.tb_writer)
 
@@ -191,6 +194,7 @@ class ImageClassification():
                                                       )
 
                 if self.tb_writer:
+                    self.tb_writer.add_scalar('data/mean_loss', mean_loss_epoch, epoch)
                     self.tb_writer.add_scalar('data/score', score, epoch)
 
                 if score_higher_is_better:
@@ -256,6 +260,8 @@ class ImageClassification():
                     best_score = score
                     save_snapshot(epoch+1, net, score,
                                   optimizer, self.snapshot_dir)
+
+    # Submission methods:
 
     def predict_for_submission(self, net, pth_path,
                                ds_transform_raw, multilabel=False,
